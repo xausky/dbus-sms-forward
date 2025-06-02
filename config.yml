@@ -1,0 +1,46 @@
+# 短信转发配置文件
+forwards:
+  # 转发规则1：将包含验证码的短信转发到指定URL
+  - name: "验证码转发"
+    number: ".*"                   # 匹配任何发送者号码
+    text: ".*验证码.*|.*code.*"     # 匹配包含"验证码"或"code"的短信
+    url: "https://example.com/api/sms/forward"
+    body:
+      type: "verification"
+      phone: "{{number}}"
+      message: "{{text}}"
+      timestamp: "{{timestamp}}"
+
+  # 转发规则2：将特定号码的短信转发到另一个URL
+  - name: "银行短信转发"
+    number: "^95588$|^95566$"      # 匹配银行号码
+    text: ".*"                     # 匹配任何内容
+    url: "https://myserver.com/banking/notify"
+    body:
+      source: "sms"
+      bank_message: "{{text}}"
+      sender: "{{number}}"
+  
+  # 转发规则3：使用嵌套结构的示例
+  - name: "嵌套结构转发"
+    number: ".*"
+    text: ".*重要通知.*"
+    url: "https://webhook.site/your-unique-id"
+    body:
+      message:
+        content: "{{text}}"
+        sender: "{{number}}"
+        time: "{{timestamp}}"
+      notification:
+        title: "短信通知"
+        subtitle: "来自 {{number}} 的消息"
+      attachments:
+        - type: "text"
+          content: "{{text}}"
+        - type: "metadata"
+          sender_info:
+            number: "{{number}}"
+            time: "{{timestamp}}"
+      options:
+        urgent: true
+        category: "sms"
