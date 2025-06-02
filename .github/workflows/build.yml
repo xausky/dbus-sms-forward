@@ -66,6 +66,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            dbus-sms-forward-*.tar.gz
+            dbus-sms-forward-binaries/dbus-sms-forward-*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
