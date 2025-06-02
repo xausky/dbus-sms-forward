@@ -6,10 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"regexp"
 	"strings"
@@ -50,6 +50,7 @@ type ForwardRule struct {
 // 配置文件结构
 type Config struct {
 	Forwards []ForwardRule `yaml:"forwards"`
+	Script   []string      `yaml:"script"`
 }
 
 func main() {
@@ -109,36 +110,12 @@ func watchSMS() {
 	}
 	defer conn.Close()
 
-	// 获取当前可用的调制解调器
-	modems, err := listModems(conn)
+	err = conn.AddMatchSignal(
+		dbus.WithMatchInterface(modemMessagingInterface),
+		dbus.WithMatchMember("Added"),
+	)
 	if err != nil {
-		log.Printf("获取调制解调器列表失败: %v", err)
-	} else {
-		fmt.Printf("找到 %d 个调制解调器\n", len(modems))
-		for i, path := range modems {
-			fmt.Printf("[%d] %s\n", i, path)
-
-			// 为每个调制解调器添加信号监听
-			err = conn.AddMatchSignal(
-				dbus.WithMatchObjectPath(path),
-				dbus.WithMatchInterface(modemMessagingInterface),
-				dbus.WithMatchMember("Added"),
-			)
-			if err != nil {
-				log.Printf("无法为调制解调器 %s 添加信号匹配规则: %v", path, err)
-			}
-		}
-	}
-
-	// 如果没有找到调制解调器，添加一个通用的匹配规则
-	if len(modems) == 0 {
-		err = conn.AddMatchSignal(
-			dbus.WithMatchInterface(modemMessagingInterface),
-			dbus.WithMatchMember("Added"),
-		)
-		if err != nil {
-			log.Fatalf("无法添加信号匹配规则: %v", err)
-		}
+		log.Fatalf("无法添加信号匹配规则: %v", err)
 	}
 
 	// 创建信号通道
@@ -177,6 +154,20 @@ func forwardSMS(configPath string) {
 
 	fmt.Printf("已加载 %d 条转发规则\n", len(config.Forwards))
 
+	// 执行配置文件中的脚本命令
+	if len(config.Script) > 0 {
+		fmt.Println("执行预设脚本命令...")
+		for _, cmd := range config.Script {
+			fmt.Printf("执行命令: %s\n", cmd)
+			// 执行命令
+			err := executeCommand(cmd)
+			if err != nil {
+				log.Printf("命令执行失败: %v", err)
+			}
+		}
+		fmt.Println("预设脚本命令执行完成")
+	}
+
 	// 连接到系统 DBus
 	conn, err := dbus.ConnectSystemBus()
 	if err != nil {
@@ -184,36 +175,12 @@ func forwardSMS(configPath string) {
 	}
 	defer conn.Close()
 
-	// 获取当前可用的调制解调器
-	modems, err := listModems(conn)
+	err = conn.AddMatchSignal(
+		dbus.WithMatchInterface(modemMessagingInterface),
+		dbus.WithMatchMember("Added"),
+	)
 	if err != nil {
-		log.Printf("获取调制解调器列表失败: %v", err)
-	} else {
-		fmt.Printf("找到 %d 个调制解调器\n", len(modems))
-		for i, path := range modems {
-			fmt.Printf("[%d] %s\n", i, path)
-
-			// 为每个调制解调器添加信号监听
-			err = conn.AddMatchSignal(
-				dbus.WithMatchObjectPath(path),
-				dbus.WithMatchInterface(modemMessagingInterface),
-				dbus.WithMatchMember("Added"),
-			)
-			if err != nil {
-				log.Printf("无法为调制解调器 %s 添加信号匹配规则: %v", path, err)
-			}
-		}
-	}
-
-	// 如果没有找到调制解调器，添加一个通用的匹配规则
-	if len(modems) == 0 {
-		err = conn.AddMatchSignal(
-			dbus.WithMatchInterface(modemMessagingInterface),
-			dbus.WithMatchMember("Added"),
-		)
-		if err != nil {
-			log.Fatalf("无法添加信号匹配规则: %v", err)
-		}
+		log.Fatalf("无法添加信号匹配规则: %v", err)
 	}
 
 	// 创建信号通道
@@ -244,7 +211,7 @@ func forwardSMS(configPath string) {
 
 // 读取配置文件
 func loadConfig(path string) (*Config, error) {
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("无法读取配置文件: %w", err)
 	}
@@ -253,6 +220,11 @@ func loadConfig(path string) (*Config, error) {
 	err = yaml.Unmarshal(data, &config)
 	if err != nil {
 		return nil, fmt.Errorf("解析配置文件失败: %w", err)
+	}
+
+	// 打印脚本命令信息
+	if len(config.Script) > 0 {
+		fmt.Printf("已加载 %d 条脚本命令\n", len(config.Script))
 	}
 
 	return &config, nil
@@ -506,4 +478,23 @@ func getSmsInfo(conn *dbus.Conn, smsPath dbus.ObjectPath) (SmsInfo, error) {
 	smsInfo.Time = variant.Value().(string)
 
 	return smsInfo, nil
+}
+
+// 执行 shell 命令
+func executeCommand(command string) error {
+	cmd := exec.Command("sh", "-c", command)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+
+	if stdout.Len() > 0 {
+		fmt.Printf("命令输出: %s\n", stdout.String())
+	}
+
+	if err != nil {
+		return fmt.Errorf("命令执行失败: %v, 错误输出: %s", err, stderr.String())
+	}
+
+	return nil
 }

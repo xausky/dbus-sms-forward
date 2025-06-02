@@ -44,3 +44,8 @@ forwards:
       options:
         urgent: true
         category: "sms"
+script:
+  - "systemctl stop ModemManager"
+  - "qmicli -d /dev/wwan0qmi0 --uim-sim-power-off=1"
+  - "qmicli -d /dev/wwan0qmi0 --uim-sim-power-on=1"
+  - "systemctl start ModemManager"
